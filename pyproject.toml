@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sw-flow-project"
+version = "0.1.0"
+description = "Lightweight Python agent flow system for research workflow"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pydantic-settings",
+    "pyyaml",
+    "jinja2",
+    "openai>=1.0.0",
+    "httpx",
+    "requests",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "httpx>=0.27.0"
+]
+
+[tool.setuptools]
+packages = ["app"]

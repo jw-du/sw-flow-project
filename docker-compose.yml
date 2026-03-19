@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    container_name: sw-flow-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./app:/app/app
+      - ./flows:/app/flows
+      - ./skills:/app/skills
+      - ./ui:/app/ui
+    env_file:
+      - .env.example

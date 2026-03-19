@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SW投研工作流</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+  </script>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --bg-color: #f3f4f6;
+      --chat-bg: #ffffff;
+      --user-msg: #dbeafe;
+      --sys-msg: #f8fafc;
+      --border-color: #e2e8f0;
+      --text-main: #1e293b;
+      --text-light: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; }
+    
+    header { background-color: white; padding: 16px 24px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 1.25rem; font-weight: 600; color: var(--primary); }
+    
+    main { flex: 1; display: flex; overflow: hidden; }
+    
+    .chat-container { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); max-width: 800px; margin: 0 auto; width: 100%; border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color); }
+    
+    .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    
+    .msg-row { display: flex; flex-direction: column; }
+    .msg-row.user { align-items: flex-end; }
+    .msg-row.system { align-items: flex-start; }
+    
+    .msg-bubble { max-width: 85%; padding: 12px 16px; border-radius: 8px; line-height: 1.5; word-wrap: break-word; }
+    .msg-row.user .msg-bubble { background-color: var(--user-msg); border-bottom-right-radius: 0; }
+    .msg-row.system .msg-bubble { background-color: var(--sys-msg); border: 1px solid var(--border-color); border-bottom-left-radius: 0; }
+    
+    .msg-bubble pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; overflow-x: auto; margin-top: 8px; }
+    .msg-bubble code { font-family: monospace; }
+    
+    .flow-card { border: 1px solid var(--primary); border-radius: 8px; padding: 16px; margin-top: 12px; background-color: #eff6ff; }
+    .flow-card h3 { margin-bottom: 8px; color: var(--primary); font-size: 1.1rem; }
+    .flow-card p { font-size: 0.9rem; color: var(--text-light); margin-bottom: 12px; }
+    .flow-card .meta { font-size: 0.85rem; color: #475569; margin-bottom: 16px; background: white; padding: 8px; border-radius: 4px; }
+    .flow-card .actions { display: flex; gap: 12px; }
+    .flow-card button { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; transition: all 0.2s; }
+    .flow-card button.primary { background-color: var(--primary); color: white; }
+    .flow-card button.primary:hover { background-color: #1d4ed8; }
+    .flow-card button.secondary { background-color: white; border: 1px solid var(--border-color); color: var(--text-main); }
+    
+    .input-area { padding: 16px 24px; border-top: 1px solid var(--border-color); background: white; display: flex; gap: 12px; }
+    .input-area input { flex: 1; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 24px; outline: none; font-size: 1rem; transition: border-color 0.2s; }
+    .input-area input:focus { border-color: var(--primary); }
+    .input-area button { background-color: var(--primary); color: white; border: none; border-radius: 24px; padding: 0 24px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
+    .input-area button:hover { background-color: #1d4ed8; }
+    .input-area button:disabled { background-color: #94a3b8; cursor: not-allowed; }
+    
+    .loading { display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: white; animation: spin 1s ease-in-out infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* Mermaid container */
+    .mermaid-preview { background: white; padding: 16px; border-radius: 4px; margin-bottom: 16px; border: 1px solid #e2e8f0; overflow-x: auto; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>SW投研工作流</h1>
+    <div style="font-size: 0.9rem; color: var(--text-light);">执行引擎</div>
+  </header>
+
+  <main>
+    <div class="chat-container">
+      <div class="messages" id="chat-messages">
+        <!-- 初始欢迎语 -->
+        <div class="msg-row system">
+          <div class="msg-bubble">
+            👋 你好！我是投研 Agent。请告诉我你需要做什么？
+            <br><br>
+            <span style="font-size: 0.9rem; color: var(--text-light);">例如："帮我整理一下最近关于房地产的市场情绪，看看有没有利好政策"</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="input-area">
+        <input type="text" id="user-input" placeholder="输入您的投研需求..." autocomplete="off" onkeypress="handleEnter(event)">
+        <button id="send-btn" onclick="sendMessage()">发送</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const messagesEl = document.getElementById('chat-messages');
+    const inputEl = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    
+    // 当前上下文中提炼的参数
+    let currentExtractedParams = {};
+
+    function handleEnter(e) {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    }
+
+    function appendMessage(role, contentHtml) {
+      const row = document.createElement('div');
+      row.className = `msg-row ${role}`;
+      row.innerHTML = `<div class="msg-bubble">${contentHtml}</div>`;
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return row;
+    }
+
+    async function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      
+      // 显示用户消息
+      appendMessage('user', text);
+      inputEl.value = '';
+      
+      // 禁用输入
+      inputEl.disabled = true;
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = '<div class="loading"></div>';
+      
+      try {
+        // 阶段 1: Match
+        const res = await fetch('/chat/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: text, topk: 1 })
+        });
+        
+        const data = await res.json();
+        
+        if (data.candidates && data.candidates.length > 0) {
+          const flow = data.candidates[0];
+          currentExtractedParams = data.intent.extracted_params || {};
+          
+          // 渲染候选卡片 (阶段 2: Confirm)
+          renderFlowCard(flow);
+        } else {
+          appendMessage('system', '抱歉，没有找到匹配的工作流。请尝试换个说法。');
+        }
+      } catch (err) {
+        appendMessage('system', `<span style="color:red">请求出错: ${err.message}</span>`);
+      } finally {
+        inputEl.disabled = false;
+        sendBtn.disabled = false;
+        sendBtn.innerText = '发送';
+        inputEl.focus();
+      }
+    }
+
+    function renderFlowCard(flow) {
+      // 生成一个唯一的 ID 供 mermaid 渲染
+      const mermaidId = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+      
+      const cardHtml = `
+        <div class="flow-card">
+          <h3>推荐 Flow: ${flow.name}</h3>
+          ${flow.mermaid_code ? `<div class="mermaid-preview" id="${mermaidId}-container">
+             <div class="loading" style="border-top-color: var(--primary);"></div> <span style="font-size:12px;color:#666;">正在渲染流程图...</span>
+          </div>` : `<div class="meta">该 Flow 暂无流程图展示。</div>`}
+          <div class="actions">
+            <button class="primary" onclick="executeFlow('${flow.flow_id}')">确认并执行</button>
+            <button class="secondary" onclick="cancelFlow()">取消</button>
+          </div>
+        </div>
+      `;
+      appendMessage('system', cardHtml);
+      
+      // 如果有 mermaid 代码，触发渲染
+      if (flow.mermaid_code && window.mermaid) {
+        setTimeout(async () => {
+          try {
+            const { svg } = await window.mermaid.render('svg-' + mermaidId, flow.mermaid_code);
+            const container = document.getElementById(`${mermaidId}-container`);
+            if (container) {
+                container.innerHTML = svg;
+                // 调整一下 svg 的样式使其自适应
+                const svgEl = container.querySelector('svg');
+                if (svgEl) {
+                    svgEl.style.maxWidth = '100%';
+                    svgEl.style.height = 'auto';
+                }
+            }
+          } catch (e) {
+            console.error('Mermaid render error:', e);
+            const container = document.getElementById(`${mermaidId}-container`);
+            if (container) {
+                const escapedCode = flow.mermaid_code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                container.innerHTML = `<div style="color:red;font-size:12px;margin-bottom:8px;">流程图渲染失败: ${e.message}</div><pre style="font-size:12px;text-align:left;background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:4px;overflow-x:auto;"><code>${escapedCode}</code></pre>`;
+            }
+          }
+        }, 100);
+      }
+    }
+
+    function cancelFlow() {
+      appendMessage('system', '已取消执行。');
+    }
+
+    async function executeFlow(flowId) {
+      appendMessage('system', `🚀 开始执行 Flow: <b>${flowId}</b>... 请稍候。`);
+      
+      // 构造输入参数 (这里默认传入提取的参数，加点默认值)
+      const inputs = {
+        ...currentExtractedParams,
+        lookback_days: 7,
+        output_path: `report_${Date.now()}.md`
+      };
+
+      try {
+        // 阶段 3: Execute
+        const res = await fetch('/flow/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ flow_id: flowId, inputs: inputs })
+        });
+        
+        const data = await res.json();
+        const exec = data.execution;
+        
+        if (exec.status === 'success') {
+          // 如果最后一步有输出，尝试用 markdown 渲染
+          let finalResultHtml = '✅ <b>执行成功！</b><br><br>';
+          
+          // 展示步骤状态
+          finalResultHtml += '<ul style="margin-bottom: 16px; padding-left: 20px; font-size: 0.9rem;">';
+          exec.step_results.forEach(s => {
+            finalResultHtml += `<li>步骤 [${s.step_id}]: ${s.status === 'success' ? '✅' : '❌'}</li>`;
+          });
+          finalResultHtml += '</ul>';
+
+          // 尝试获取 summary_step 或 sentiment_step 的结果并渲染
+          const context = exec.outputs.context || {};
+          const report = context.final_report || context.steps?.sentiment_step;
+          
+          if (report) {
+            finalResultHtml += `<div style="background:#fff; padding:16px; border-radius:8px; border:1px solid #e2e8f0; margin-top:16px;">`;
+            // 如果 report 是对象包含 text 字段
+            const markdownText = typeof report === 'string' ? report : (report.text || JSON.stringify(report, null, 2));
+            finalResultHtml += marked.parse(markdownText);
+            finalResultHtml += `</div>`;
+          }
+
+          appendMessage('system', finalResultHtml);
+        } else {
+          // 执行失败
+          let errHtml = `❌ <b>执行失败</b><br><ul>`;
+          exec.step_results.forEach(s => {
+            if (s.status === 'failed') {
+              errHtml += `<li>步骤 [${s.step_id}]: ${s.error}</li>`;
+            }
+          });
+          errHtml += `</ul>`;
+          appendMessage('system', errHtml);
+        }
+        
+      } catch (err) {
+        appendMessage('system', `<span style="color:red">执行请求出错: ${err.message}</span>`);
+      }
+    }
+  </script>
+</body>
+</html>
