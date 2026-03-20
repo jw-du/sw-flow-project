@@ -1,0 +1,11 @@
+{
+  "owner": "invest-flow",
+  "slug": "sina-forex",
+  "displayName": "sina-forex",
+  "latest": {
+    "version": "1.0.0",
+    "publishedAt": 1740988800000,
+    "commit": "local"
+  },
+  "history": []
+}

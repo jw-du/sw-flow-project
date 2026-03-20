@@ -1,6 +1,26 @@
 ---
 name: industry-keywords
 description: 行业关键词库，提供各行业正向/负向/中性指标关键词，用于搭配bing-search进行行业新闻搜索和情绪分析。
+inputs:
+  topic:
+    type: string
+    description: 分析的主题或行业（如“房地产”、“科技”）
+    required: true
+  lookback_days:
+    type: number
+    description: 回溯天数
+    required: false
+  task:
+    type: string
+    description: 具体的生成任务要求（如生成搜索用的关键词数组）
+    required: false
+  output_type:
+    type: string
+    description: 期望输出的格式（如 json_array）
+    required: false
+outputs:
+  type: any
+  description: "根据 output_type 返回的关键词列表或 JSON 数组"
 ---
 
 # 行业关键词库

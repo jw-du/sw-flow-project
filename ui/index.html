@@ -101,6 +101,7 @@
     
     // 当前上下文中提炼的参数
     let currentExtractedParams = {};
+    let currentGeneratedFlow = null;
 
     function handleEnter(e) {
       if (e.key === 'Enter') {
@@ -140,14 +141,25 @@
         
         const data = await res.json();
         
-        if (data.candidates && data.candidates.length > 0) {
+        if (data.candidates && data.candidates.length > 0 && data.candidates[0].score >= 0.8) {
           const flow = data.candidates[0];
           currentExtractedParams = data.intent.extracted_params || {};
           
           // 渲染候选卡片 (阶段 2: Confirm)
           renderFlowCard(flow);
         } else {
-          appendMessage('system', '抱歉，没有找到匹配的工作流。请尝试换个说法。');
+          // Score too low or no candidates -> Scenario 2 Trigger
+          const cardHtml = `
+            <div class="flow-card">
+              <h3>未找到完全匹配的工作流</h3>
+              <p>系统可以利用现有技能为您动态生成一个专属工作流（耗时约 10-20 秒）。</p>
+              <div class="actions">
+                <button class="primary" onclick="generateFlow('${text}')">让 AI 自动生成</button>
+                <button class="secondary" onclick="cancelFlow()">取消</button>
+              </div>
+            </div>
+          `;
+          appendMessage('system', cardHtml);
         }
       } catch (err) {
         appendMessage('system', `<span style="color:red">请求出错: ${err.message}</span>`);
@@ -208,6 +220,203 @@
       appendMessage('system', '已取消执行。');
     }
 
+    async function generateFlow(query) {
+      appendMessage('system', `正在为您生成专属工作流，请稍候... <div class="loading" style="border-top-color: var(--primary); vertical-align: middle; width: 14px; height: 14px; border-width: 2px;"></div>`);
+      
+      try {
+        const res = await fetch('/flow/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+          currentGeneratedFlow = data;
+          
+          const mermaidId = 'mermaid-temp-' + Math.random().toString(36).substr(2, 9);
+          
+          const cardHtml = `
+            <div class="flow-card" style="border-color: #10b981; background-color: #f0fdf4;">
+              <h3 style="color: #047857;">✨ 动态生成 Flow: ${data.name}</h3>
+              <p>${data.description}</p>
+              <div class="mermaid-preview" id="${mermaidId}-container">
+                 <div class="loading" style="border-top-color: #047857;"></div> <span style="font-size:12px;color:#666;">正在渲染动态流程图...</span>
+              </div>
+              <div class="actions">
+                <button class="primary" style="background-color: #10b981;" onclick="executeTempFlow()">执行此工作流</button>
+                <button class="secondary" onclick="saveTempFlow()">💾 一键保存</button>
+                <button class="secondary" onclick="cancelFlow()">取消</button>
+              </div>
+            </div>
+          `;
+          appendMessage('system', cardHtml);
+          
+          if (data.mermaid_code && window.mermaid) {
+            setTimeout(async () => {
+              try {
+                const renderTask = window.mermaid.render('svg-' + mermaidId, data.mermaid_code);
+                const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error('渲染超时，请重试或重新生成')), 5000));
+                const { svg } = await Promise.race([renderTask, timeoutTask]);
+                const container = document.getElementById(`${mermaidId}-container`);
+                if (container) {
+                  container.innerHTML = svg;
+                  const svgEl = container.querySelector('svg');
+                  if (svgEl) {
+                    svgEl.style.maxWidth = '100%';
+                    svgEl.style.height = 'auto';
+                  }
+                }
+              } catch (e) {
+                const container = document.getElementById(`${mermaidId}-container`);
+                if (container) {
+                  const fallback = (currentGeneratedFlow.steps || []).map((s, i) => `${i + 1}. ${s.name || s.id || '未命名步骤'}`).join('<br>');
+                  container.innerHTML = `<div style="color:red;font-size:12px;margin-bottom:8px;">渲染失败: ${e.message}</div><div style="font-size:12px;color:#334155;text-align:left;line-height:1.6;">${fallback || '无可展示步骤'}</div>`;
+                }
+              }
+            }, 100);
+          } else {
+            const container = document.getElementById(`${mermaidId}-container`);
+            if (container) {
+              const fallback = (data.steps || []).map((s, i) => `${i + 1}. ${s.name || s.id || '未命名步骤'}`).join('<br>');
+              container.innerHTML = `<div style="font-size:12px;color:#334155;text-align:left;line-height:1.6;">${fallback || '未返回流程图与步骤信息'}</div>`;
+            }
+          }
+        } else {
+          appendMessage('system', `<span style="color:red">生成失败: ${data.detail || '未知错误'}</span>`);
+        }
+      } catch (err) {
+        appendMessage('system', `<span style="color:red">请求出错: ${err.message}</span>`);
+      }
+    }
+
+    async function executeTempFlow() {
+      if (!currentGeneratedFlow) return;
+      appendMessage('system', `🚀 开始执行临时 Flow: <b>${currentGeneratedFlow.name}</b>... 请稍候。`);
+      
+      let inputs = {
+        ...currentExtractedParams,
+        lookback_days: 7,
+        output_path: `report_${Date.now()}.md`
+      };
+
+      try {
+        let res = await fetch('/flow/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            flow_id: "temp_generated_flow", 
+            inputs: inputs,
+            steps: currentGeneratedFlow.steps,
+            input_schema: currentGeneratedFlow.inputs
+          })
+        });
+        let data = await res.json();
+
+        if (!res.ok) {
+          const missing = data?.detail?.missing_inputs;
+          if (Array.isArray(missing) && missing.length > 0) {
+            const filled = {};
+            for (const key of missing) {
+              const schema = currentGeneratedFlow.inputs?.[key] || {};
+              const hint = schema.description ? `（${schema.description}）` : '';
+              const value = prompt(`请补充参数 ${key}${hint}:`, '');
+              if (value === null) {
+                appendMessage('system', '已取消执行，缺少必填输入。');
+                return;
+              }
+              filled[key] = value;
+            }
+            inputs = { ...inputs, ...filled };
+            res = await fetch('/flow/execute', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                flow_id: "temp_generated_flow",
+                inputs: inputs,
+                steps: currentGeneratedFlow.steps,
+                input_schema: currentGeneratedFlow.inputs
+              })
+            });
+            data = await res.json();
+          }
+        }
+
+        if (!res.ok) {
+          appendMessage('system', `❌ 执行失败：${data?.detail?.message || data?.detail || '未知错误'}`);
+          return;
+        }
+
+        handleExecuteResponse(data);
+      } catch (err) {
+        appendMessage('system', `<span style="color:red">执行请求出错: ${err.message}</span>`);
+      }
+    }
+
+    async function saveTempFlow() {
+      if (!currentGeneratedFlow) return;
+      const newName = prompt("请输入要保存的工作流名称:", currentGeneratedFlow.name);
+      if (!newName) return;
+      const newDesc = prompt("请输入描述:", currentGeneratedFlow.description);
+      
+      try {
+        const payload = {
+            ...currentGeneratedFlow,
+            name: newName,
+            description: newDesc || currentGeneratedFlow.description
+        };
+        const res = await fetch('/flow/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+            appendMessage('system', `✅ 工作流已成功保存至 <b>${data.file}</b>，日后可直接复用！`);
+        } else {
+            const detail = data?.detail;
+            const msg = typeof detail === 'string' ? detail : (detail?.message || JSON.stringify(detail || data));
+            appendMessage('system', `❌ 保存失败: ${msg}`);
+        }
+      } catch (err) {
+        appendMessage('system', `<span style="color:red">请求出错: ${err.message}</span>`);
+      }
+    }
+
+    function handleExecuteResponse(data) {
+        const exec = data.execution;
+        
+        if (exec.status === 'success') {
+          let finalResultHtml = '✅ <b>执行成功！</b><br><br>';
+          finalResultHtml += '<ul style="margin-bottom: 16px; padding-left: 20px; font-size: 0.9rem;">';
+          exec.step_results.forEach(s => {
+            finalResultHtml += `<li>步骤 [${s.step_id}]: ${s.status === 'success' ? '✅' : '❌'}</li>`;
+          });
+          finalResultHtml += '</ul>';
+
+          const context = exec.outputs.context || {};
+          const report = context.final_report || context.steps?.sentiment_step || context.steps?.[exec.step_results[exec.step_results.length-1].step_id];
+          
+          if (report) {
+            finalResultHtml += `<div style="background:#fff; padding:16px; border-radius:8px; border:1px solid #e2e8f0; margin-top:16px;">`;
+            const markdownText = typeof report === 'string' ? report : (report.text || JSON.stringify(report, null, 2));
+            finalResultHtml += marked.parse(markdownText);
+            finalResultHtml += `</div>`;
+          }
+
+          appendMessage('system', finalResultHtml);
+        } else {
+          let errHtml = `❌ <b>执行失败</b><br><ul>`;
+          exec.step_results.forEach(s => {
+            if (s.status === 'failed') {
+              errHtml += `<li>步骤 [${s.step_id}]: ${s.error}</li>`;
+            }
+          });
+          errHtml += `</ul>`;
+          appendMessage('system', errHtml);
+        }
+    }
+
     async function executeFlow(flowId) {
       appendMessage('system', `🚀 开始执行 Flow: <b>${flowId}</b>... 请稍候。`);
       
@@ -226,44 +435,7 @@
           body: JSON.stringify({ flow_id: flowId, inputs: inputs })
         });
         
-        const data = await res.json();
-        const exec = data.execution;
-        
-        if (exec.status === 'success') {
-          // 如果最后一步有输出，尝试用 markdown 渲染
-          let finalResultHtml = '✅ <b>执行成功！</b><br><br>';
-          
-          // 展示步骤状态
-          finalResultHtml += '<ul style="margin-bottom: 16px; padding-left: 20px; font-size: 0.9rem;">';
-          exec.step_results.forEach(s => {
-            finalResultHtml += `<li>步骤 [${s.step_id}]: ${s.status === 'success' ? '✅' : '❌'}</li>`;
-          });
-          finalResultHtml += '</ul>';
-
-          // 尝试获取 summary_step 或 sentiment_step 的结果并渲染
-          const context = exec.outputs.context || {};
-          const report = context.final_report || context.steps?.sentiment_step;
-          
-          if (report) {
-            finalResultHtml += `<div style="background:#fff; padding:16px; border-radius:8px; border:1px solid #e2e8f0; margin-top:16px;">`;
-            // 如果 report 是对象包含 text 字段
-            const markdownText = typeof report === 'string' ? report : (report.text || JSON.stringify(report, null, 2));
-            finalResultHtml += marked.parse(markdownText);
-            finalResultHtml += `</div>`;
-          }
-
-          appendMessage('system', finalResultHtml);
-        } else {
-          // 执行失败
-          let errHtml = `❌ <b>执行失败</b><br><ul>`;
-          exec.step_results.forEach(s => {
-            if (s.status === 'failed') {
-              errHtml += `<li>步骤 [${s.step_id}]: ${s.error}</li>`;
-            }
-          });
-          errHtml += `</ul>`;
-          appendMessage('system', errHtml);
-        }
+        handleExecuteResponse(await res.json());
         
       } catch (err) {
         appendMessage('system', `<span style="color:red">执行请求出错: ${err.message}</span>`);

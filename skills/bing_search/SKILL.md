@@ -1,6 +1,18 @@
 ---
 name: bing_search
 description: Bing search skill for all users. No API key needed. Supports Chinese and English search.
+inputs:
+  _positional:
+    type: array
+    description: "[0]为搜索关键词(必填)，[1]为结果数量(可选，默认10)"
+    required: true
+  exclude:
+    type: string
+    description: "要过滤的域名列表，逗号分隔，如 'zhihu.com,baidu.com'"
+    required: false
+outputs:
+  type: json
+  description: "包含 status, query, results(标题/链接/摘要数组) 的 JSON 结果"
 dependency:
   python:
     - beautifulsoup4>=4.11.0

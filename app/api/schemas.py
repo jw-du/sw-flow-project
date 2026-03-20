@@ -20,7 +20,30 @@ class ChatQueryResponse(BaseModel):
 class ExecuteFlowRequest(BaseModel):
     flow_id: str
     inputs: dict[str, Any] = Field(default_factory=dict)
+    steps: list[dict[str, Any]] | None = None  # for temporary generated flows
+    input_schema: dict[str, Any] | None = None
 
 
 class ExecuteFlowResponse(BaseModel):
     execution: FlowExecutionResult
+
+
+class GenerateFlowRequest(BaseModel):
+    query: str
+
+
+class GenerateFlowResponse(BaseModel):
+    name: str
+    description: str
+    inputs: dict[str, Any]
+    steps: list[dict[str, Any]]
+    mermaid_code: str
+    raw_json: str
+
+
+class SaveFlowRequest(BaseModel):
+    name: str
+    description: str
+    inputs: dict[str, Any]
+    steps: list[dict[str, Any]]
+    mermaid_code: str

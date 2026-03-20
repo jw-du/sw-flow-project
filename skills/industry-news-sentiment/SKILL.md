@@ -1,6 +1,26 @@
 ---
 name: industry-news-sentiment
 description: 分析行业新闻情绪并根据新闻类型与影响进行打分。适用于在投资决策中评估金融市场新闻、政策公告、监管动作或行业特定信息。支持评分（0/0.5/1 分）、识别重大政策变化（降准、国家队增持）、监管打击与行业特定事件。
+inputs:
+  topic:
+    type: string
+    description: 行业或研判主题
+    required: true
+  search_input:
+    type: any
+    description: 需要分析的新闻数据（通常是 bing_search 的结果）
+    required: true
+  output_format:
+    type: string
+    description: 输出格式（如 markdown）
+    required: false
+  output_file:
+    type: string
+    description: 可选的输出保存路径
+    required: false
+outputs:
+  type: string
+  description: "情绪分析的最终文本报告或 Markdown 格式结果"
 ---
 
 # 行业新闻情绪

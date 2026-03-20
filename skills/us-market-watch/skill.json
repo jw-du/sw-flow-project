@@ -1,0 +1,6 @@
+{
+  "name": "us-market-watch",
+  "version": "1.0.0",
+  "type": "skill",
+  "description": "美股外盘行情获取工具，支持美股三大指数、中概股ETF、富时A50期指"
+}
