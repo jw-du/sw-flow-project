@@ -11,8 +11,11 @@ inputs:
     description: "要过滤的域名列表，逗号分隔，如 'zhihu.com,baidu.com'"
     required: false
 outputs:
-  type: json
   description: "包含 status, query, results(标题/链接/摘要数组) 的 JSON 结果"
+  fields:
+    - status
+    - query
+    - results
 dependency:
   python:
     - beautifulsoup4>=4.11.0

@@ -1,3 +1,11 @@
+# 负责把Markdown Flow 文件读成“可匹配、可执行”的内存结构。
+# 扫描并列出可用 Flow 的元信息（给检索/推荐用）
+# 按 ID 读取某个 Flow 的“执行规范”（DAG 步骤）并转成模型对象
+# 解析 Markdown 中的 frontmatter、YAML/JSON 代码块
+
+
+
+
 from __future__ import annotations
 
 import re
@@ -24,13 +32,13 @@ class StoredFlow(BaseModel):
 
 
 class FlowRepository:
-    def __init__(self, flow_dir: str):
+    def __init__(self, flow_dir: str): # 接收 Flow 目录（来自配置）
         self.flow_dir = Path(flow_dir)
 
-    def list_flows(self) -> list[FlowMeta]:
+    def list_flows(self) -> list[FlowMeta]:  # 返回所有可用 Flow 的元信息
         return [self._read_meta(path) for path in sorted(self.flow_dir.glob("*.md"))]
 
-    def get_flow(self, flow_id: str) -> StoredFlow:
+    def get_flow(self, flow_id: str) -> StoredFlow:  # 返回指定 ID 的 Flow 元信息和执行规范
         for path in sorted(self.flow_dir.glob("*.md")):
             meta = self._read_meta(path)
             if meta.id == flow_id:
@@ -38,7 +46,7 @@ class FlowRepository:
                 return StoredFlow(meta=meta, spec=spec)
         raise FileNotFoundError(f"flow not found: {flow_id}")
 
-    def _read_meta(self, file_path: Path) -> FlowMeta:
+    def _read_meta(self, file_path: Path) -> FlowMeta: 
         content = file_path.read_text(encoding="utf-8")
         meta = self._parse_front_matter(content)
         return FlowMeta(

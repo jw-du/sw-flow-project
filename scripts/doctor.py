@@ -1,9 +1,13 @@
+# 环节自检脚本
+
+
 import importlib
 import json
 import sys
 from typing import Any
 
 from pathlib import Path
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:

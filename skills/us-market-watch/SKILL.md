@@ -1,6 +1,17 @@
 ---
 name: us-market-watch
-description: 美股外盘行情获取工具。获取美股三大指数（纳斯达克、标普500、道琼斯）、中概股ETF（KWEB/PGJ）、富时A50期指实时行情。国内可用、免费。Use when: (1) 查看美股收盘行情, (2) 监控中概股表现, (3) 分析外盘对A股影响
+description: "美股外盘行情获取工具。获取美股三大指数（纳斯达克、标普500、道琼斯）、中概股ETF（KWEB/PGJ）、富时A50期指实时行情。国内可用、免费。Use when: (1) 查看美股收盘行情, (2) 监控中概股表现, (3) 分析外盘对A股影响"
+skill_type: execution
+inputs:
+  symbols:
+    type: array
+    description: 行情代码数组，默认包含 IXIC/SPX/DJI/KWEB/FTSE_A50
+    required: false
+outputs:
+  description: 外盘行情结构化数据
+  fields:
+    - quotes
+    - summary
 dependency:
   python:
     - urllib3

@@ -1,3 +1,5 @@
+# LLM 连通性测试脚本
+
 import json
 
 import sys

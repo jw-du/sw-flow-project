@@ -1,6 +1,18 @@
 ---
 name: sina-forex
-description: 新浪财经外汇行情获取工具。国内可用、完全免费，支持美元/人民币等主流货币对实时行情查询。Use when: (1) 查询外汇实时汇率, (2) 监控美元人民币汇率, (3) 获取在岸/离岸人民币行情, (4) 查看主要货币对走势
+description: "新浪财经外汇行情获取工具。国内可用、完全免费，支持美元/人民币等主流货币对实时行情查询。Use when: (1) 查询外汇实时汇率, (2) 监控美元人民币汇率, (3) 获取在岸/离岸人民币行情, (4) 查看主要货币对走势"
+skill_type: execution
+inputs:
+  symbol:
+    type: string
+    description: 货币对代码，如 USDCNH
+    required: true
+outputs:
+  description: 外汇行情结构化数据
+  fields:
+    - symbol
+    - price
+    - change_pct
 dependency:
   python:
     - urllib3

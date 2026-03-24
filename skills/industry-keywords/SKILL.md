@@ -19,8 +19,9 @@ inputs:
     description: 期望输出的格式（如 json_array）
     required: false
 outputs:
-  type: any
   description: "根据 output_type 返回的关键词列表或 JSON 数组"
+  fields:
+    - queries
 ---
 
 # 行业关键词库

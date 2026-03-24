@@ -53,6 +53,7 @@ class PythonScriptAdapter(SkillAdapter):
                 capture_output=True, 
                 text=True, 
                 encoding="utf-8",
+                errors="replace",
                 check=True
             )
             stdout = (result.stdout or "").strip()
@@ -62,7 +63,7 @@ class PythonScriptAdapter(SkillAdapter):
                 return {"text": stdout, "raw": True}
                 
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Script execution failed: {e.stderr}")
+            raise RuntimeError(f"Script execution failed: {(e.stderr or '').strip()}")
 
     def find_script(self) -> Path | None:
         candidates = [

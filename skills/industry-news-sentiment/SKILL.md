@@ -19,8 +19,10 @@ inputs:
     description: 可选的输出保存路径
     required: false
 outputs:
-  type: string
   description: "情绪分析的最终文本报告或 Markdown 格式结果"
+  fields:
+    - final_report
+    - text
 ---
 
 # 行业新闻情绪

@@ -1,8 +1,22 @@
-***
-
+---
 name: market-environment
 description: 市场环境特征分析指南。提供日历效应、外盘风向、国内情绪三个维度的分析框架、评分标准和决策逻辑，用于生成宏观天气预报矩阵和投资策略建议。
---------------------------------------------------------------------------------
+skill_type: execution
+inputs:
+  output_path:
+    type: string
+    description: 报告输出路径
+    required: false
+  forward_days:
+    type: number
+    description: 前瞻日历窗口天数
+    required: false
+outputs:
+  description: 市场环境分析 Markdown 报告
+  fields:
+    - report
+    - text
+---
 
 # 市场环境特征分析指南
 
@@ -511,4 +525,3 @@ cat ../../data/market-environment/market_environment_report_YYYYMMDD_HHMMSS.md
 ```bash
 pip install fuzzywuzzy python-Levenshtein pandas
 ```
-

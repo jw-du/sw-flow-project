@@ -1,6 +1,29 @@
 ---
 name: eastmoney-calendar
 description: 爬取东方财富财经日历经济数据；当用户需要获取全球财经日历、经济指标数据、财经事件信息时使用
+skill_type: execution
+inputs:
+  start_date:
+    type: string
+    description: 开始日期，格式 YYYY-MM-DD
+    required: true
+  end_date:
+    type: string
+    description: 结束日期，格式 YYYY-MM-DD
+    required: true
+  type:
+    type: string
+    description: 可选事件类型过滤
+    required: false
+  size:
+    type: number
+    description: 每页条数
+    required: false
+outputs:
+  description: 东方财富财经日历结构化结果
+  fields:
+    - TotalCount
+    - Data
 dependency:
   python:
     - requests>=2.25.0

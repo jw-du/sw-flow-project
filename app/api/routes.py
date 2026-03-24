@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.agent.flow_matcher import FlowMatcher
 from app.agent.intent_router import IntentRouter
 from app.agent.flow_generator import FlowGenerator
+from app.agent.skill_registry import skill_registry
 from app.api.schemas import (
     ChatQueryRequest, ChatQueryResponse, 
     ExecuteFlowRequest, ExecuteFlowResponse,
@@ -16,6 +17,7 @@ import os
 import re
 import yaml
 from datetime import datetime
+from pathlib import Path
 
 def _default_input_value(key: str, schema: dict) -> object:
     if "default" in schema:
@@ -56,6 +58,78 @@ def _collect_required_input_refs(steps: list[StepSpec]) -> list[str]:
         for m in pattern.findall(text):
             required.add(m)
     return sorted(required)
+
+def _collect_step_refs(steps: list[StepSpec]) -> list[tuple[str, str]]:
+    pattern = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)[^{}]*\s*\}\}")
+    refs: list[tuple[str, str]] = []
+    for step in steps:
+        payload = {
+            "params": step.params,
+            "items": step.items,
+        }
+        text = str(payload)
+        for source, field in pattern.findall(text):
+            if source in {"inputs", "item"}:
+                continue
+            refs.append((source, field))
+    return refs
+
+def _validate_flow_contract(steps: list[StepSpec], inputs: dict[str, object]) -> dict[str, list]:
+    issues = {"missing_inputs": [], "missing_sources": [], "field_mismatch": [], "forward_refs": []}
+    missing_inputs = [k for k in _collect_required_input_refs(steps) if k not in inputs]
+    if missing_inputs:
+        issues["missing_inputs"] = sorted(set(missing_inputs))
+
+    step_by_id = {s.id: s for s in steps}
+    step_index = {s.id: idx for idx, s in enumerate(steps)}
+    output_keys = {s.output_key for s in steps if s.output_key}
+    output_key_index = {s.output_key: idx for idx, s in enumerate(steps) if s.output_key}
+    refs = _collect_step_refs(steps)
+    for current_idx, step in enumerate(steps):
+        for source, field in _collect_step_refs([step]):
+            if source in step_index and step_index[source] >= current_idx:
+                issues["forward_refs"].append({"step": step.id, "source": source, "field": field})
+            if source in output_key_index and output_key_index[source] >= current_idx:
+                issues["forward_refs"].append({"step": step.id, "source": source, "field": field})
+
+    for source, field in refs:
+        if source in step_by_id:
+            upstream = step_by_id[source]
+            if field in {"output", "text", "results"}:
+                continue
+            if upstream.output_key and field == upstream.output_key:
+                continue
+            skill_meta = skill_registry.get_skill(upstream.skill)
+            allowed_fields: set[str] = set()
+            if skill_meta and isinstance(skill_meta.outputs, dict):
+                fields = skill_meta.outputs.get("fields")
+                if isinstance(fields, list):
+                    allowed_fields.update([str(x) for x in fields])
+                schema = skill_meta.outputs.get("schema")
+                if isinstance(schema, dict):
+                    props = schema.get("properties")
+                    if isinstance(props, dict):
+                        allowed_fields.update([str(k) for k in props.keys()])
+            if allowed_fields and field not in allowed_fields:
+                issues["field_mismatch"].append(
+                    {"source": source, "field": field, "allowed_fields": sorted(allowed_fields)}
+                )
+            continue
+
+        if source in output_keys:
+            continue
+        issues["missing_sources"].append({"source": source, "field": field})
+    return issues
+
+def _has_blocking_issues(issues: dict[str, list]) -> bool:
+    missing_inputs = issues.get("missing_inputs", [])
+    missing_sources = issues.get("missing_sources", [])
+    forward_refs = issues.get("forward_refs", [])
+    return (
+        (isinstance(missing_inputs, list) and len(missing_inputs) > 0)
+        or (isinstance(missing_sources, list) and len(missing_sources) > 0)
+        or (isinstance(forward_refs, list) and len(forward_refs) > 0)
+    )
 
 
 def build_router(repository: FlowRepository) -> APIRouter:
@@ -105,13 +179,13 @@ def build_router(repository: FlowRepository) -> APIRouter:
         # 如果原始 inputs 里有 output_path，我们将其重定向到新目录下
         # 如果没有，我们默认创建一个 report.md
         inputs = _merge_inputs_with_schema(body.inputs, body.input_schema)
-        missing_inputs = [k for k in _collect_required_input_refs(spec.steps) if k not in inputs]
-        if missing_inputs:
+        issues = _validate_flow_contract(spec.steps, inputs)
+        if _has_blocking_issues(issues):
             raise HTTPException(
                 status_code=422,
                 detail={
-                    "message": "执行前校验失败：存在缺失输入参数",
-                    "missing_inputs": missing_inputs,
+                    "message": "执行前校验失败：存在缺失输入、缺失来源或前向依赖",
+                    **issues,
                 },
             )
         original_filename = inputs.get("output_path", "report.md")
@@ -149,9 +223,22 @@ def build_router(repository: FlowRepository) -> APIRouter:
             with open(final_output_path, "w", encoding="utf-8") as f:
                 f.write(report_text)
 
+        persisted_report = None
+        if os.path.exists(final_output_path):
+            try:
+                persisted_report = Path(final_output_path).read_text(encoding="utf-8")
+            except Exception:
+                persisted_report = None
+
         if isinstance(execution.outputs, dict):
             execution.outputs["saved_report_path"] = final_output_path
             execution.outputs["session_dir"] = session_dir
+            if persisted_report:
+                ctx = execution.outputs.get("context")
+                if not isinstance(ctx, dict):
+                    ctx = {}
+                    execution.outputs["context"] = ctx
+                ctx["final_report"] = persisted_report
 
         return ExecuteFlowResponse(execution=execution)
 
@@ -170,6 +257,16 @@ def build_router(repository: FlowRepository) -> APIRouter:
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post("/flow/validate")
+    def flow_validate(body: ExecuteFlowRequest):
+        if not body.steps:
+            return {"ok": True, "issues": {}}
+        steps = [StepSpec(**s) for s in body.steps]
+        inputs = _merge_inputs_with_schema(body.inputs, body.input_schema)
+        issues = _validate_flow_contract(steps, inputs)
+        ok = not _has_blocking_issues(issues)
+        return {"ok": ok, "issues": issues}
 
     @router.post("/flow/save")
     def flow_save(body: SaveFlowRequest):

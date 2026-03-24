@@ -118,6 +118,46 @@
       return row;
     }
 
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderMarkdownSafe(markdownText) {
+      if (window.marked && typeof window.marked.parse === 'function') {
+        return window.marked.parse(markdownText);
+      }
+      return `<pre style="white-space:pre-wrap;background:#fff;padding:12px;border-radius:6px;border:1px solid #e2e8f0;">${escapeHtml(markdownText)}</pre>`;
+    }
+
+    async function renderMermaidSafe(containerId, mermaidCode, steps) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      if (!mermaidCode || !window.mermaid || typeof window.mermaid.render !== 'function') {
+        const fallback = (steps || []).map((s, i) => `${i + 1}. ${s.name || s.id || '未命名步骤'}`).join('<br>');
+        container.innerHTML = `<div style="font-size:12px;color:#334155;text-align:left;line-height:1.6;">${fallback || '未返回流程图与步骤信息'}</div>`;
+        return;
+      }
+      try {
+        window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
+        const { svg } = await window.mermaid.render('svg-' + Math.random().toString(36).slice(2), mermaidCode);
+        container.innerHTML = svg;
+        const svgEl = container.querySelector('svg');
+        if (svgEl) {
+          svgEl.style.maxWidth = '100%';
+          svgEl.style.height = 'auto';
+        }
+      } catch (e) {
+        const fallback = (steps || []).map((s, i) => `${i + 1}. ${s.name || s.id || '未命名步骤'}`).join('<br>');
+        const escaped = escapeHtml(mermaidCode || '');
+        container.innerHTML = `<div style="color:red;font-size:12px;margin-bottom:8px;">渲染失败: ${escapeHtml(e?.message || '未知错误')}</div><div style="font-size:12px;color:#334155;text-align:left;line-height:1.6;">${fallback || '无可展示步骤'}</div><details style="margin-top:8px;text-align:left;"><summary style="font-size:12px;color:#64748b;cursor:pointer;">查看 Mermaid 源码</summary><pre style="font-size:12px;background:#0f172a;color:#e2e8f0;padding:8px;border-radius:4px;overflow:auto;">${escaped}</pre></details>`;
+      }
+    }
+
     async function sendMessage() {
       const text = inputEl.value.trim();
       if (!text) return;
@@ -152,7 +192,7 @@
           const cardHtml = `
             <div class="flow-card">
               <h3>未找到完全匹配的工作流</h3>
-              <p>系统可以利用现有技能为您动态生成一个专属工作流（耗时约 10-20 秒）。</p>
+              <p>系统可以利用现有技能为您动态生成一个专属工作流。</p>
               <div class="actions">
                 <button class="primary" onclick="generateFlow('${text}')">让 AI 自动生成</button>
                 <button class="secondary" onclick="cancelFlow()">取消</button>
@@ -252,36 +292,7 @@
           `;
           appendMessage('system', cardHtml);
           
-          if (data.mermaid_code && window.mermaid) {
-            setTimeout(async () => {
-              try {
-                const renderTask = window.mermaid.render('svg-' + mermaidId, data.mermaid_code);
-                const timeoutTask = new Promise((_, reject) => setTimeout(() => reject(new Error('渲染超时，请重试或重新生成')), 5000));
-                const { svg } = await Promise.race([renderTask, timeoutTask]);
-                const container = document.getElementById(`${mermaidId}-container`);
-                if (container) {
-                  container.innerHTML = svg;
-                  const svgEl = container.querySelector('svg');
-                  if (svgEl) {
-                    svgEl.style.maxWidth = '100%';
-                    svgEl.style.height = 'auto';
-                  }
-                }
-              } catch (e) {
-                const container = document.getElementById(`${mermaidId}-container`);
-                if (container) {
-                  const fallback = (currentGeneratedFlow.steps || []).map((s, i) => `${i + 1}. ${s.name || s.id || '未命名步骤'}`).join('<br>');
-                  container.innerHTML = `<div style="color:red;font-size:12px;margin-bottom:8px;">渲染失败: ${e.message}</div><div style="font-size:12px;color:#334155;text-align:left;line-height:1.6;">${fallback || '无可展示步骤'}</div>`;
-                }
-              }
-            }, 100);
-          } else {
-            const container = document.getElementById(`${mermaidId}-container`);
-            if (container) {
-              const fallback = (data.steps || []).map((s, i) => `${i + 1}. ${s.name || s.id || '未命名步骤'}`).join('<br>');
-              container.innerHTML = `<div style="font-size:12px;color:#334155;text-align:left;line-height:1.6;">${fallback || '未返回流程图与步骤信息'}</div>`;
-            }
-          }
+          setTimeout(() => renderMermaidSafe(`${mermaidId}-container`, data.mermaid_code, data.steps), 80);
         } else {
           appendMessage('system', `<span style="color:red">生成失败: ${data.detail || '未知错误'}</span>`);
         }
@@ -301,6 +312,40 @@
       };
 
       try {
+        const vres = await fetch('/flow/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            flow_id: "temp_generated_flow",
+            inputs: inputs,
+            steps: currentGeneratedFlow.steps,
+            input_schema: currentGeneratedFlow.inputs
+          })
+        });
+        const vdata = await vres.json();
+        if (vres.ok && vdata?.ok === false) {
+          const missing = vdata?.issues?.missing_inputs || [];
+          if (Array.isArray(missing) && missing.length > 0) {
+            const filled = {};
+            for (const key of missing) {
+              const schema = currentGeneratedFlow.inputs?.[key] || {};
+              const hint = schema.description ? `（${schema.description}）` : '';
+              const value = prompt(`请补充参数 ${key}${hint}:`, '');
+              if (value === null) {
+                appendMessage('system', '已取消执行，缺少必填输入。');
+                return;
+              }
+              filled[key] = value;
+            }
+            inputs = { ...inputs, ...filled };
+          }
+          const mismatch = vdata?.issues?.field_mismatch || [];
+          const missingSources = vdata?.issues?.missing_sources || [];
+          if (mismatch.length > 0 || missingSources.length > 0) {
+            appendMessage('system', `⚠️ 发现字段对齐风险，系统将继续尝试执行。建议后续优化该 Flow。`);
+          }
+        }
+
         let res = await fetch('/flow/execute', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -400,7 +445,7 @@
           if (report) {
             finalResultHtml += `<div style="background:#fff; padding:16px; border-radius:8px; border:1px solid #e2e8f0; margin-top:16px;">`;
             const markdownText = typeof report === 'string' ? report : (report.text || JSON.stringify(report, null, 2));
-            finalResultHtml += marked.parse(markdownText);
+            finalResultHtml += renderMarkdownSafe(markdownText);
             finalResultHtml += `</div>`;
           }
 
